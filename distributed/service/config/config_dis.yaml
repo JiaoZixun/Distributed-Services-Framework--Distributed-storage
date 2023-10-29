@@ -1,0 +1,5 @@
+distributed_system:
+    ip_list: ["192.168.209.129"]
+    health_port: 9090
+    savle_nums: 1
+    fileroot: "/home/jzx/StudyCpp/Distributed_storage/Up_Files/"
