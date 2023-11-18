@@ -344,7 +344,7 @@ bool Distributed::getFileFromSlave(const std::string& frag_name, std::string& fr
     }
     auto res = req2service(next_ip, m_down_port, "/sendSegFile", frag_name);
     if(res->getStatus() != sylar::http::HttpStatus(200)) {
-        SYLAR_LOG_INFO(g_logger) << "from " << m_host->toString() << " to " << next_ip->toString() << " port: " << m_save_port << "/segfileSave is error num: "
+        SYLAR_LOG_INFO(g_logger) << "from " << m_host->toString() << " to " << next_ip->toString() << " port: " << m_save_port << "/sendSegFile is error num: "
             << res->getStatus() << " error: " << res->getBody();
         return false;
     }
