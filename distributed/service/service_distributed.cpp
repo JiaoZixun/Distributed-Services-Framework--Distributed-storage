@@ -14,10 +14,12 @@ static int m_savle_nums;  // savle数量
 static std::string m_fileroot = "/home/jzx/StudyCpp/Distributed_storage/Up_Files/";
 static std::map<uint32_t, sylar::IPAddress::ptr> m_haship;
 
+const uint32_t max_hash_size = UINT32_MAX - 1;
+
 // 一致性哈希
 static uint32_t getHashindex(const std::string& name) {
     std::hash<std::string> m_hash;
-    return m_hash(name);
+    return m_hash(name) % max_hash_size;
 }
 
 struct Init_Params {
@@ -168,6 +170,8 @@ void Distributed::uploadFile() {
     // 2.min（机器数量，总长度/10M）
     size_t file_nums = std::max((size_t)1, std::min((size_t)m_savle_nums, filedata.size()/10240 + 1));  // 文件切片数量
     size_t file_len = filedata.size() / file_nums;  // 每片文件长度
+    m_file2num[filename] = file_nums;   // 文件名：分片数量
+    m_file2num[filename] = file_len;   // 文件名：分片长度
     size_t file_st = 0;
     int rt_flag = 1;
     for(size_t i = 0; i < file_nums; i++) {
@@ -279,21 +283,91 @@ void Distributed::downloadFile() {
     // 4.从环上取地址
     // 5.请求getFileFromSlave服务，得到分片数据
     // 6.组装分片数据
+    setCORS();  // 设置跨域
+    std::string file_name = m_req->getHeader("filename", "");
+    if(file_name == "") {
+        SYLAR_LOG_INFO(g_logger) << "filename is error!";
+        m_res->setStatus((sylar::http::HttpStatus)500);
+        m_res->setBody("filename is null!");
+        return ;
+    }
+    int freg_nums = m_file2num[file_name];
+    // int freg_len = m_file2len[file_name];
+    std::vector<std::string> all_data;
+    // 根据分片数请求相应的分片内容
+    for(size_t i = 0; i < freg_nums; i++) {
+        std::string frag_name = file_name + "_" + std::to_string(i);
+        int ok_flag = 0;
+        std::string freg_data;
+        if(!getFileFromSlave(frag_name, freg_data)) {  
+            SYLAR_LOG_ERROR(g_logger) << "getFileFromSlave is fail!";
+            m_res->setStatus((sylar::http::HttpStatus)500);
+            m_res->setBody("getFileFromSlave is fail!");
+            return ;
+        }
+        if(freg_data == "") {
+            SYLAR_LOG_ERROR(g_logger) << "freg_data: "<< frag_name << "is null! ";
+            m_res->setStatus((sylar::http::HttpStatus)500);
+            m_res->setBody(frag_name + " is null!");
+            return ;
+        }
+        all_data.emplace_back(freg_data);
+    }
+    m_res->setStatus((sylar::http::HttpStatus)200);
+    m_res->setBody(merageFile(all_data));
+    return ;
 }
 
-// 合并文件 返回
-std::string Distributed::merageFile(const std::string& filename) {
 
+// 合并文件 返回
+std::string Distributed::merageFile(const std::vector<std::string>& filedatas) {
+    std::string ret;
+    for(auto x:filedatas) ret+=x;
+    return ret;
 }
 
 // 从其他结点获取分片内容
-void Distributed::getFileFromSlave() {
-
+bool Distributed::getFileFromSlave(const std::string& frag_name, std::string& freg_data) {
+    sylar::IPAddress::ptr next_ip = getIp(frag_name);
+    int error_num = 0;
+    for(int i=0;i<m_savle_nums;i++) {
+        if(checkHealth(next_ip)) {
+            SYLAR_LOG_INFO(g_logger) <<"send to ip is: " << next_ip->toString();
+            break;
+        }
+        ++error_num;
+        if(error_num > m_savle_nums / 2) {
+            SYLAR_LOG_INFO(g_logger) << "more than a half savle is error!";
+            return false;
+        }
+        next_ip = getNextIp(next_ip);
+    }
+    auto res = req2service(next_ip, m_down_port, "/sendSegFile", frag_name);
+    if(res->getStatus() != sylar::http::HttpStatus(200)) {
+        SYLAR_LOG_INFO(g_logger) << "from " << m_host->toString() << " to " << next_ip->toString() << " port: " << m_save_port << "/segfileSave is error num: "
+            << res->getStatus() << " error: " << res->getBody();
+        return false;
+    }
+    freg_data = res->getBody();
+    return true;
 }
 
 // 发送分片
 void Distributed::sendSegFile() {
-
+    setCORS();  // 设置跨域
+    std::string file_name_seg = m_req->getHeader("segfilename", "");
+    if(file_name_seg == "") {
+        SYLAR_LOG_INFO(g_logger) << "segfilename is error!";
+        m_res->setStatus((sylar::http::HttpStatus)500);
+        m_res->setBody("segfilename is null!");
+        return ;
+    }
+    std::string downroot = m_fileroot + file_name_seg;
+    std::ifstream file(downroot, std::ios::binary);
+    std::string ret;
+    file >> ret;
+    m_res->setStatus((sylar::http::HttpStatus)200);
+    m_res->setBody(ret);
 }
 
 

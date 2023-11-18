@@ -51,10 +51,10 @@ public:
     void downloadFile();
 
     // 合并文件 返回
-    std::string merageFile(const std::string& filename);
+    std::string merageFile(const std::vector<std::string>& filedatas);
 
     // 从其他结点获取分片内容
-    void getFileFromSlave();
+    bool getFileFromSlave(const std::string& frag_name, std::string& freg_data);
 
     // 发送分片
     void sendSegFile();
@@ -71,6 +71,8 @@ private:
 
 private:
     sylar::IPAddress::ptr m_host;
+    std::unordered_map<std::string, int> m_file2num;    // 文件名：分片数量
+    std::unordered_map<std::string, int> m_file2len;    // 文件名：分片长度
 };
 
 
